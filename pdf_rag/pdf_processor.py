@@ -4,7 +4,7 @@ from typing import List, Dict, Any
 
 from pypdf import PdfReader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.vectorstores import Chroma
+from langchain.vectorstores import FAISS
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.chains import RetrievalQA
 from langchain.chat_models import ChatOpenAI
@@ -76,34 +76,34 @@ class PDFProcessor:
         self.text_chunks = text_splitter.split_text(text)
         return self.text_chunks
     
-    def create_vectorstore(self, persist_directory: str = None) -> Chroma:
+    def create_vectorstore(self, persist_directory: str = None) -> FAISS:
         """
         Create a vector store from the text chunks.
         
         Args:
-            persist_directory: Directory to persist the vector store
+            persist_directory: Directory to persist the vector store (optional)
+                               For Streamlit Cloud, typically keep this as None for in-memory storage
             
         Returns:
-            Chroma vector store
+            FAISS vector store
         """
         embeddings = OpenAIEmbeddings()
         
+        # Create in-memory FAISS index
+        self.vectorstore = FAISS.from_texts(
+            texts=self.text_chunks,
+            embedding=embeddings
+        )
+        
+        # Save the FAISS index locally if a directory is provided
+        # For Streamlit Cloud, we typically don't provide a persist_directory
         if persist_directory:
-            self.vectorstore = Chroma.from_texts(
-                texts=self.text_chunks,
-                embedding=embeddings,
-                persist_directory=persist_directory
-            )
-            self.vectorstore.persist()
-        else:
-            self.vectorstore = Chroma.from_texts(
-                texts=self.text_chunks,
-                embedding=embeddings
-            )
+            os.makedirs(persist_directory, exist_ok=True)
+            self.vectorstore.save_local(persist_directory)
         
         return self.vectorstore
     
-    def load_vectorstore(self, persist_directory: str) -> Chroma:
+    def load_vectorstore(self, persist_directory: str) -> FAISS:
         """
         Load a vector store from a directory.
         
@@ -111,12 +111,12 @@ class PDFProcessor:
             persist_directory: Directory where the vector store is persisted
             
         Returns:
-            Chroma vector store
+            FAISS vector store
         """
         embeddings = OpenAIEmbeddings()
-        self.vectorstore = Chroma(
-            persist_directory=persist_directory,
-            embedding_function=embeddings
+        self.vectorstore = FAISS.load_local(
+            folder_path=persist_directory,
+            embeddings=embeddings
         )
         return self.vectorstore
     
@@ -175,7 +175,8 @@ class PDFProcessor:
         Process the PDF file: extract text, chunk it, and create a vector store.
         
         Args:
-            persist_directory: Directory to persist the vector store
+            persist_directory: Directory to persist the vector store (optional)
+                               In Streamlit Cloud, this is typically not used as storage is ephemeral
         """
         # Extract text from PDF
         text = self.extract_text()
@@ -186,7 +187,7 @@ class PDFProcessor:
         # Chunk the text
         self.chunk_text(text)
         
-        # Create vector store
+        # Create vector store (in-memory by default for Streamlit Cloud)
         self.create_vectorstore(persist_directory)
         
         print(f"PDF processed successfully. Created {len(self.text_chunks)} chunks.")

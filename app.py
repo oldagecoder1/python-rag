@@ -4,7 +4,26 @@ Streamlit web application for the PDF RAG system.
 
 import os
 import streamlit as st
+import atexit
+import shutil
+import sys
 from pdf_rag.pdf_processor import PDFProcessor
+
+# Determine if we're running in Streamlit Cloud
+# Streamlit Cloud sets STREAMLIT_SHARING or STREAMLIT_CLOUD_ENV environment variables
+IS_STREAMLIT_CLOUD = os.environ.get('STREAMLIT_SHARING') or os.environ.get('STREAMLIT_CLOUD_ENV')
+
+# Function to clean up temporary files on exit (mainly for local development)
+def cleanup_temp_files():
+    if not IS_STREAMLIT_CLOUD and os.path.exists("./data"):
+        try:
+            shutil.rmtree("./data")
+            print("Temporary files cleaned up.")
+        except Exception as e:
+            print(f"Error cleaning up temporary files: {e}")
+
+# Register the cleanup function to run on exit
+atexit.register(cleanup_temp_files)
 
 def main():
     st.set_page_config(
@@ -30,9 +49,11 @@ def main():
     
     # Main content area
     if uploaded_file is not None:
+        # Create data directory if it doesn't exist
+        os.makedirs("./data", exist_ok=True)
+        
         # Save the uploaded file temporarily
         pdf_path = os.path.join("./data", uploaded_file.name)
-        os.makedirs("./data", exist_ok=True)
         
         with open(pdf_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
@@ -40,8 +61,18 @@ def main():
         # Create a session state to store the processor
         if "processor" not in st.session_state or process_button:
             with st.spinner("Processing PDF..."):
+                # Create processor
                 st.session_state.processor = PDFProcessor(pdf_path, pdf_password if pdf_password else None)
-                st.session_state.processor.process_pdf()
+                
+                # For Streamlit Cloud, use in-memory storage (no persistence)
+                # For local development, can use persistence if desired
+                if IS_STREAMLIT_CLOUD:
+                    st.session_state.processor.process_pdf(persist_directory=None)
+                else:
+                    # For local development, can use persistence
+                    persist_dir = "./data/vectorstore"
+                    st.session_state.processor.process_pdf(persist_directory=persist_dir)
+                
                 st.success("PDF processed successfully!")
         
         # Question answering

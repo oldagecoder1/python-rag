@@ -62,3 +62,4 @@ wheels/
 /data/
 /data/vectorstore/
 *.pdf
+.vscode/*
